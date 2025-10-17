@@ -11,7 +11,7 @@ import styles from "./page.module.css";
 export default function Home() {
   // Counter (blockchain) state & actions
   const [counter, setCounter] = useState<number | null>(null);
-  const { isConnected } = useAccount();
+  const { address, isConnected } = useAccount();
   const { writeContract, isPending } = useWriteContract();
 
   // Read the current counter value
@@ -71,6 +71,7 @@ export default function Home() {
     stake: number;
   }>(null);
   const [isFlipping, setIsFlipping] = useState(false);
+  const [payoutStatus, setPayoutStatus] = useState<null | { status: string; txHash?: string }>(null);
 
   const handleFlip = async () => {
     // simple client-side validation
@@ -96,6 +97,29 @@ export default function Home() {
       } else {
         const data = await res.json();
         setFlipResult(data);
+        // If we won and the user is connected, request a payout from the house
+        if (data.result === "win" && isConnected && address) {
+          try {
+            setPayoutStatus({ status: "pending" });
+            const payRes = await fetch("/api/coinflip/payout", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ to: address, amount: data.payout }),
+            });
+
+            if (!payRes.ok) {
+              const err = await payRes.json().catch(() => ({}));
+              setPayoutStatus({ status: "failed" });
+              console.error("Payout failed:", err);
+            } else {
+              const payData = await payRes.json();
+              setPayoutStatus({ status: "sent", txHash: payData.txHash });
+            }
+          } catch (e) {
+            console.error(e);
+            setPayoutStatus({ status: "error" });
+          }
+        }
       }
     } catch {
       setFlipResult({ result: "lose", coin: choice, payout: 0, stake });
@@ -124,8 +148,7 @@ export default function Home() {
           Get started by editing <code>app/page.tsx</code>
         </p>
 
-        <h2 className={styles.componentsTitle}>Explore Components</h2>
-
+  <h2 className={styles.componentsTitle}>MiniKit Coinflip</h2>
         <div style={{ margin: '2rem 0', padding: '1rem', border: '1px solid #eee', borderRadius: 8 }}>
           <h3>Counter Contract Demo</h3>
           <p>Current value: {counter !== null ? counter : 'Loading...'}</p>
@@ -171,38 +194,16 @@ export default function Home() {
               <strong>Payout:</strong> {flipResult.payout}
             </div>
           )}
+          {payoutStatus && (
+            <div style={{ marginTop: 8 }}>
+              <strong>Payout:</strong> {payoutStatus.status} {payoutStatus.txHash ? `(tx: ${payoutStatus.txHash})` : ''}
+            </div>
+          )}
         </div>
 
-        <ul className={styles.components}>
-          {[
-            {
-              name: "Transaction",
-              url: "https://docs.base.org/onchainkit/transaction/transaction",
-            },
-            {
-              name: "Swap",
-              url: "https://docs.base.org/onchainkit/swap/swap",
-            },
-            {
-              name: "Checkout",
-              url: "https://docs.base.org/onchainkit/checkout/checkout",
-            },
-            {
-              name: "Wallet",
-              url: "https://docs.base.org/onchainkit/wallet/wallet",
-            },
-            {
-              name: "Identity",
-              url: "https://docs.base.org/onchainkit/identity/identity",
-            },
-          ].map((component) => (
-            <li key={component.name}>
-              <a target="_blank" rel="noreferrer" href={component.url}>
-                {component.name}
-              </a>
-            </li>
-          ))}
-        </ul>
+        <div style={{ marginTop: 24 }}>
+          <p style={{ fontWeight: 600 }}>Cryptomonnaie utilisée: Sepolia ETH</p>
+        </div>
       </div>
     </div>
   );
