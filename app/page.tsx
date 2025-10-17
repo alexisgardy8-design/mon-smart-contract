@@ -1,7 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 import { useEffect, useState } from "react";
 import { publicClient, counterContract, COUNTER_CONTRACT_ADDRESS } from "./lib/counterClient";
 import { useAccount, useWriteContract } from "wagmi";
+import CoinFlipABI from "./lib/CoinFlipABI.json";
 import Image from "next/image";
 import { Wallet } from "@coinbase/onchainkit/wallet";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
@@ -12,6 +14,7 @@ export default function Home() {
   // Counter (blockchain) state & actions
   const [counter, setCounter] = useState<number | null>(null);
   const { address, isConnected } = useAccount();
+  const COINFLIP_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_COINFLIP_ADDRESS as string;
   const { writeContract, isPending } = useWriteContract();
 
   // Read the current counter value
@@ -84,44 +87,26 @@ export default function Home() {
     setFlipResult(null);
 
     try {
-      const res = await fetch("/api/coinflip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ choice, stake }),
+      // call the contract placeBet with value = stake (in wei)
+      if (!COINFLIP_CONTRACT_ADDRESS) {
+        throw new Error('CoinFlip contract address not configured (NEXT_PUBLIC_COINFLIP_ADDRESS)');
+      }
+
+      const value = BigInt(Math.round(stake * 1000)) * BigInt(10 ** 15); // stake with 3 decimals -> wei
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tx = await (writeContract as any)({
+        address: COINFLIP_CONTRACT_ADDRESS,
+        abi: CoinFlipABI as any,
+        functionName: 'placeBet',
+        args: [choice === 'heads' ? 0 : 1],
+        value,
       });
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setFlipResult({ result: "lose", coin: choice, payout: 0, stake });
-        console.error("Coinflip API error:", err);
-      } else {
-        const data = await res.json();
-        setFlipResult(data);
-        // If we won and the user is connected, request a payout from the house
-        if (data.result === "win" && isConnected && address) {
-          try {
-            setPayoutStatus({ status: "pending" });
-            const payRes = await fetch("/api/coinflip/payout", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ to: address, amount: data.payout }),
-            });
-
-            if (!payRes.ok) {
-              const err = await payRes.json().catch(() => ({}));
-              setPayoutStatus({ status: "failed" });
-              console.error("Payout failed:", err);
-            } else {
-              const payData = await payRes.json();
-              setPayoutStatus({ status: "sent", txHash: payData.txHash });
-            }
-          } catch (e) {
-            console.error(e);
-            setPayoutStatus({ status: "error" });
-          }
-        }
-      }
-    } catch {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setPayoutStatus({ status: 'tx_sent', txHash: (tx as any)?.hash || String(tx) });
+    } catch (err) {
+      console.error(err);
       setFlipResult({ result: "lose", coin: choice, payout: 0, stake });
     } finally {
       setIsFlipping(false);
@@ -156,6 +141,9 @@ export default function Home() {
             {isPending ? 'Incrementing...' : 'Increment'}
           </button>
           {!isConnected && <p style={{ color: 'red' }}>Connect your wallet to interact.</p>}
+          {isConnected && address && (
+            <p style={{ color: '#666' }}>Connected: {String(address).slice(0, 6)}...{String(address).slice(-4)}</p>
+          )}
         </div>
 
         <div style={{ margin: '2rem 0', padding: '1rem', border: '1px solid #eee', borderRadius: 8 }}>
