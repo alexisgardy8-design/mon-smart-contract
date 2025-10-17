@@ -35,14 +35,15 @@ export async function POST(request: NextRequest) {
         account,
       });
 
-      const value = parseUnits(amount.toString(), 18);
+      // parse amount allowing up to 3 decimals
+      const amountStr = typeof amount === "number" ? amount.toFixed(3) : amount;
+      const value = parseUnits(amountStr, 18);
 
-      // Types from viem can be strict; cast to unknown to avoid lint errors in this example
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const txHash = await walletClient.sendTransaction({
+      const txHash = await (walletClient as any).sendTransaction({
         to: to as `0x${string}`,
         value,
-      } as unknown as any);
+      });
 
       return NextResponse.json({ txHash });
     } catch (err) {

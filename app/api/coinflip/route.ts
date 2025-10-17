@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 type Body = {
   choice: "heads" | "tails";
-  stake: number;
+  stake: number | string;
 };
 
 export async function POST(request: NextRequest) {
@@ -11,16 +11,17 @@ export async function POST(request: NextRequest) {
 
     const { choice, stake } = body;
 
-    if (!choice || typeof stake !== "number" || stake <= 0) {
+    const stakeNum = typeof stake === "string" ? Number(stake) : stake;
+    if (!choice || typeof stakeNum !== "number" || !isFinite(stakeNum) || stakeNum <= 0) {
       return NextResponse.json({ message: "Invalid input" }, { status: 400 });
     }
 
     // Simple pseudo-random flip. For production use a verifiable RNG.
     const coin = Math.random() < 0.5 ? "heads" : "tails";
     const win = coin === choice;
-    const payout = win ? Number((stake * 2).toFixed(2)) : 0;
+  const payout = win ? Number((stakeNum * 2).toFixed(3)) : 0;
 
-    return NextResponse.json({ result: win ? "win" : "lose", coin, payout, stake });
+  return NextResponse.json({ result: win ? "win" : "lose", coin, payout, stake: stakeNum });
   } catch (err) {
     console.error("coinflip error", err);
     return NextResponse.json({ message: "Server error" }, { status: 500 });

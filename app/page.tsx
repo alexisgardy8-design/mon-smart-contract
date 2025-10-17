@@ -162,14 +162,14 @@ export default function Home() {
           <h3>Coinflip</h3>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <label>
-              Mise:
+              Mise (ETH):
               <input
                 type="number"
                 min={0}
-                step={0.01}
+                step={0.001}
                 value={stake}
                 onChange={(e) => setStake(Number(e.target.value))}
-                style={{ marginLeft: 8, width: 100 }}
+                style={{ marginLeft: 8, width: 120 }}
               />
             </label>
 
