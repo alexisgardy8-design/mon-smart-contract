@@ -1,4 +1,4 @@
-import { createConfig, http } from 'wagmi';
+import { http } from 'wagmi';
 import { sepolia } from 'viem/chains';
 import { createPublicClient } from 'viem';
 import CounterABI from './CounterABI.json';

@@ -2,8 +2,16 @@
 import { useEffect, useState } from "react";
 import { publicClient, counterContract, COUNTER_CONTRACT_ADDRESS } from "./lib/counterClient";
 import { useAccount, useWriteContract } from "wagmi";
+import Image from "next/image";
+import { Wallet } from "@coinbase/onchainkit/wallet";
+import { useMiniKit } from "@coinbase/onchainkit/minikit";
+// import { useQuickAuth } from "@coinbase/onchainkit/minikit";
+import styles from "./page.module.css";
+
+export default function Home() {
+  // Counter (blockchain) state & actions
   const [counter, setCounter] = useState<number | null>(null);
-  const { address, isConnected } = useAccount();
+  const { isConnected } = useAccount();
   const { writeContract, isPending } = useWriteContract();
 
   // Read the current counter value
@@ -16,7 +24,7 @@ import { useAccount, useWriteContract } from "wagmi";
           functionName: "number",
         });
         setCounter(Number(value));
-      } catch (e) {
+      } catch {
         setCounter(null);
       }
     }
@@ -39,26 +47,12 @@ import { useAccount, useWriteContract } from "wagmi";
         functionName: "number",
       });
       setCounter(Number(value));
-    } catch (e) {
+    } catch {
       // handle error
     }
   };
-import Image from "next/image";
-import { Wallet } from "@coinbase/onchainkit/wallet";
-import { useMiniKit } from "@coinbase/onchainkit/minikit";
-// import { useQuickAuth } from "@coinbase/onchainkit/minikit";
-import styles from "./page.module.css";
 
-export default function Home() {
-  // If you need to verify the user's identity, you can use the useQuickAuth hook.
-  // This hook will verify the user's signature and return the user's FID. You can update
-  // this to meet your needs. See the /app/api/auth/route.ts file for more details.
-  // Note: If you don't need to verify the user's identity, you can get their FID and other user data
-  // via `useMiniKit().context?.user`.
-  // const { data, isLoading, error } = useQuickAuth<{
-  //   userFid: string;
-  // }>("/api/auth");
-
+  // MiniKit setup
   const { setMiniAppReady, isMiniAppReady } = useMiniKit();
 
   useEffect(() => {
@@ -67,6 +61,49 @@ export default function Home() {
     }
   }, [setMiniAppReady, isMiniAppReady]);
 
+  // --- Coinflip game state ---
+  const [stake, setStake] = useState<number>(1);
+  const [choice, setChoice] = useState<"heads" | "tails">("heads");
+  const [flipResult, setFlipResult] = useState<null | {
+    result: "win" | "lose";
+    coin: "heads" | "tails";
+    payout: number;
+    stake: number;
+  }>(null);
+  const [isFlipping, setIsFlipping] = useState(false);
+
+  const handleFlip = async () => {
+    // simple client-side validation
+    if (!stake || stake <= 0) {
+      setFlipResult({ result: "lose", coin: choice, payout: 0, stake });
+      return;
+    }
+
+    setIsFlipping(true);
+    setFlipResult(null);
+
+    try {
+      const res = await fetch("/api/coinflip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ choice, stake }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setFlipResult({ result: "lose", coin: choice, payout: 0, stake });
+        console.error("Coinflip API error:", err);
+      } else {
+        const data = await res.json();
+        setFlipResult(data);
+      }
+    } catch {
+      setFlipResult({ result: "lose", coin: choice, payout: 0, stake });
+    } finally {
+      setIsFlipping(false);
+    }
+  };
+  // Render JSX (page UI)
   return (
     <div className={styles.container}>
       <header className={styles.headerWrapper}>
@@ -96,6 +133,44 @@ export default function Home() {
             {isPending ? 'Incrementing...' : 'Increment'}
           </button>
           {!isConnected && <p style={{ color: 'red' }}>Connect your wallet to interact.</p>}
+        </div>
+
+        <div style={{ margin: '2rem 0', padding: '1rem', border: '1px solid #eee', borderRadius: 8 }}>
+          <h3>Coinflip</h3>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <label>
+              Mise:
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={stake}
+                onChange={(e) => setStake(Number(e.target.value))}
+                style={{ marginLeft: 8, width: 100 }}
+              />
+            </label>
+
+            <label style={{ marginLeft: 12 }}>
+              Choix:
+              <select value={choice} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setChoice(e.target.value as "heads" | "tails")} style={{ marginLeft: 8 }}>
+                <option value="heads">Heads</option>
+                <option value="tails">Tails</option>
+              </select>
+            </label>
+
+            <button onClick={handleFlip} disabled={isFlipping} style={{ marginLeft: 12 }}>
+              {isFlipping ? 'Flipping...' : 'Flip'}
+            </button>
+          </div>
+
+          {flipResult && (
+            <div style={{ marginTop: 12 }}>
+              <strong>Résultat:</strong> {flipResult.result === 'win' ? 'Gagné 🎉' : 'Perdu 😞'}<br />
+              <strong>Pièce:</strong> {flipResult.coin}<br />
+              <strong>Mise:</strong> {flipResult.stake}<br />
+              <strong>Payout:</strong> {flipResult.payout}
+            </div>
+          )}
         </div>
 
         <ul className={styles.components}>
