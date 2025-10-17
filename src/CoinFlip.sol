@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.19;
 
-import { VRFConsumerBaseV2 } from "lib/forge-std/VRFConsumerBaseV2.sol";
-import { VRFCoordinatorV2Interface } from "lib/forge-std/VRFCoordinatorV2Interface.sol";
+import {VRFConsumerBaseV2Plus} from "backend/lib/chainlink-brownie-contracts/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
+import {VRFV2PlusClient} from "backend/lib/chainlink-brownie-contracts/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 
 /**
  * @title CoinFlip
@@ -15,15 +15,24 @@ import { VRFCoordinatorV2Interface } from "lib/forge-std/VRFCoordinatorV2Interfa
  * production you must harden the contract (withdraw flow, limits, withdraw pattern,
  * avoid reentrancy risks, and carefully manage subscription/funds).
  */
-contract CoinFlip is VRFConsumerBaseV2 {
-    VRFCoordinatorV2Interface public COORDINATOR;
+contract CoinFlip is VRFConsumerBaseV2Plus {
 
     // VRF params
-    bytes32 public keyHash;
-    uint64 public subscriptionId;
-    uint32 public callbackGasLimit = 200000;
+    bytes32 public s_keyHash = 0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae;
+    uint256 public s_subscriptionId;
+    uint32 public callbackGasLimit = 40000;
     uint16 public requestConfirmations = 3;
+    uint32 public numWords =  1;
+    address public vrfCoordinator = 0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE; // Sepolia / Base Sepolia VRF Coordinator
 
+    mapping(uint256 => address) private s_rollers;
+    mapping(address => uint256) private s_results;
+
+    constructor(uint256 subscriptionId) VRFConsumerBaseV2Plus(vrfCoordinator) {
+        s_subscriptionId = subscriptionId;
+    }
+
+    
     uint256 public minBet = 1e13; // 0.00001 ETH default min
 
     struct Bet {
@@ -39,11 +48,7 @@ contract CoinFlip is VRFConsumerBaseV2 {
     event BetPlaced(uint256 indexed requestId, address indexed player, uint8 choice, uint256 amount);
     event BetSettled(uint256 indexed requestId, address indexed player, uint8 result, bool win, uint256 payout);
 
-    constructor(address vrfCoordinator, bytes32 _keyHash, uint64 _subId) VRFConsumerBaseV2(vrfCoordinator) {
-        COORDINATOR = VRFCoordinatorV2Interface(vrfCoordinator);
-        keyHash = _keyHash;
-        subscriptionId = _subId;
-    }
+    
 
     /**
      * @notice Place a bet. Sends ETH with the call. choice must be 0 or 1.
@@ -54,13 +59,17 @@ contract CoinFlip is VRFConsumerBaseV2 {
         require(msg.value >= minBet, "stake too small");
 
         // Request randomness from Chainlink VRF v2
-        uint256 requestId = COORDINATOR.requestRandomWords(
-            keyHash,
-            subscriptionId,
-            requestConfirmations,
-            callbackGasLimit,
-            1
+        uint256 requestId = s_vrfCoordinator.requestRandomWords(
+        VRFV2PlusClient.RandomWordsRequest({
+            keyHash: s_keyHash,
+            subId: s_subscriptionId,
+            requestConfirmations: requestConfirmations,
+            callbackGasLimit: callbackGasLimit,
+            numWords: numWords,
+            extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({nativePayment: true}))
+        })
         );
+
 
         bets[requestId] = Bet(payable(msg.sender), choice, msg.value, false);
 
@@ -71,7 +80,7 @@ contract CoinFlip is VRFConsumerBaseV2 {
     /**
      * @notice Chainlink VRF callback. Uses the random value to decide the outcome.
      */
-    function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords) internal override {
+    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
         Bet storage b = bets[requestId];
         if (b.player == address(0) || b.settled) {
             return; // nothing to do
